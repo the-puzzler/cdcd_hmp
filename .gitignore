@@ -2,3 +2,4 @@ models/
 old_models/
 wandb/
 best_model.pt
+artifacts
