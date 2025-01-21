@@ -4,8 +4,9 @@ from tqdm import tqdm
 import pandas as pd
 import torch.nn.functional as F
 loaded_df = pd.read_hdf('./data/sample_otu_arrays.h5', key='df')
-def generate_sequences(model, num_sequences=1, seq_length=None, num_steps=100, temperature=0, device='cpu'):
+def generate_sequences(model, num_sequences=1, seq_length=None, num_steps=100, temperature=0, device='cuda'):
     model.eval()
+    model = model.to(device)
     
     # Handle sequence lengths
     if seq_length is None:
@@ -15,64 +16,74 @@ def generate_sequences(model, num_sequences=1, seq_length=None, num_steps=100, t
     else:
         sampled_lengths = [seq_length] * num_sequences
         max_sampled_length = seq_length
-
+    
+    sampled_lengths = torch.tensor(sampled_lengths, device=device)
+    
     with torch.no_grad():
-        T = 1.0
-        min_t = 0.001
-        timesteps = torch.linspace(T, min_t, num_steps).to(device)
-        dt = -(T-min_t)/num_steps
-        t_batches = timesteps.unsqueeze(1).expand(-1, num_sequences)
+        # Get warped timesteps
+        uniform_steps = torch.linspace(1, 0, num_steps).to(device)
+        timesteps = model.time_warping.warp_time(uniform_steps)
         
+        # Initialize with scaled noise
         torch.manual_seed(42)
-        xt = torch.randn(num_sequences, max_sampled_length, model.embed_dim).to(device)
+        sigma_T = torch.sqrt(timesteps[0])
+        xt = sigma_T * torch.randn(num_sequences, max_sampled_length, model.embed_dim).to(device)
         
-        # Create proper padding mask
-        mask = torch.zeros(num_sequences, max_sampled_length, dtype=bool).to(device)
+        # Create mask
+        mask = torch.zeros(num_sequences, max_sampled_length, dtype=torch.bool, device=device)
         for i, length in enumerate(sampled_lengths):
-            mask[i, length:] = True  # Mark padding positions as True
+            mask[i, length:] = True
         
-        print("Starting denoising process...")
-        for t, t_batch in tqdm(zip(timesteps, t_batches)):
+        print("\nRunning diffusion...")
+        for i in tqdm(range(len(timesteps) - 1)):
+            t = timesteps[i]
+            t_next = timesteps[i + 1]
+            
+            t_batch = t.expand(num_sequences)
             logits = model(xt, mask, t_batch)
             expected_x0 = model.get_expected_embedding(logits)
-            score = (expected_x0 - xt)/(t**2)
             
-            if t > min_t:
-                update = -t * score * dt
-                xt = xt + update
-
-        final_logits = model(xt, mask, torch.zeros(num_sequences).to(device))
+            if t > t_next:
+                score = model.calculate_score(xt, expected_x0, t_batch)
+                dt = t_next - t
+                xt = xt - t * score * dt
+                
+                # Add noise
+                sigma = torch.sqrt(t_next)
+                noise = torch.randn_like(xt, device=device)
+                xt = xt + sigma * noise
         
+        # Final prediction
+        final_logits = model(xt, mask, torch.zeros(num_sequences, device=device))
         
-        # Vectorized token selection
-        final_tokens = torch.zeros((num_sequences, max_sampled_length), dtype=torch.long, device=device)
+        # Token selection
+        final_tokens = torch.zeros((num_sequences, max_sampled_length), 
+                                 dtype=torch.long, device=device)
         
         if temperature == 0:
-            # Parallel argmax processing
+            # Greedy sampling
             for i in range(num_sequences):
                 logits_seq = final_logits[i, :sampled_lengths[i]]
-                
-                mask = torch.ones_like(logits_seq, dtype=torch.bool)
+                mask_tokens = torch.ones_like(logits_seq, dtype=torch.bool, device=device)
                 for j in range(sampled_lengths[i]):
-                    # Apply mask to prevent repeated tokens
                     masked_logits = logits_seq[j].clone()
-                    masked_logits[~mask[j]] = float('-inf')
+                    masked_logits[~mask_tokens[j]] = float('-inf')
                     token = torch.argmax(masked_logits)
                     final_tokens[i, j] = token
-                    mask[j:, token] = False
+                    mask_tokens[j:, token] = False
         else:
-            # Parallel temperature-based sampling
+            # Temperature sampling
             for i in range(num_sequences):
                 logits_seq = final_logits[i, :sampled_lengths[i]]
                 probs = F.softmax(logits_seq / temperature, dim=-1)
-                mask = torch.ones_like(probs, dtype=torch.bool)
+                mask_tokens = torch.ones_like(probs, dtype=torch.bool, device=device)
                 for j in range(sampled_lengths[i]):
-                    masked_probs = probs[j] * mask[j]
+                    masked_probs = probs[j] * mask_tokens[j]
                     if masked_probs.sum() > 0:
                         masked_probs = masked_probs / masked_probs.sum()
                         token = torch.multinomial(masked_probs, 1)
                         final_tokens[i, j] = token
-                        mask[j:, token] = False
+                        mask_tokens[j:, token] = False
                     else:
                         break
         
