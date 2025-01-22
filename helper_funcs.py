@@ -46,10 +46,10 @@ def generate_sequences(model, num_sequences=1, seq_length=None, num_steps=100, t
             if t > t_next:
                 score = model.calculate_score(xt, expected_x0, t_batch)
                 dt = t_next - t
-                xt = xt - t * score * dt
+                xt = xt -  score * dt #debate as to whether a factor of t should be here
                 
                 # Add noise
-                sigma = torch.sqrt(t_next)
+                sigma = torch.sqrt(t_next) * 0 # dot times by 0 for regular ODE as in paper
                 noise = torch.randn_like(xt, device=device)
                 xt = xt + sigma * noise
         
