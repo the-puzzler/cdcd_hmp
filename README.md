@@ -13,6 +13,3 @@ After this model is trained to some degree, a SAE can be used to learn informati
 ## Dataset
 The dataset comes from the human micro-biome project. This has samples of OTUs from different sites on healthy humans.
 
-## TODO
-- Find optimal hyperparameters
-- Hyper parameter search
