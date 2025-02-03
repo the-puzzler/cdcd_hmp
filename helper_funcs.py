@@ -3,6 +3,7 @@ import torch
 from tqdm import tqdm
 import pandas as pd
 import torch.nn.functional as F
+
 loaded_df = pd.read_hdf('./data/sample_otu_arrays.h5', key='df')
 def generate_sequences(model, num_sequences=1, seq_length=None, num_steps=100, temperature=0, device='cuda'):
     model.eval()
