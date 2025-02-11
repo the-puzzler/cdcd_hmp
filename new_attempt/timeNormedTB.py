@@ -2,16 +2,19 @@ import torch
 import torch.nn as nn
 
 class TransformerBlock(nn.Module):
-    def __init__(self, hidden_dim, num_heads=8, time_embed_dim=128):
+    def __init__(self, hidden_dim, num_heads=8, time_embed_dim=128, dropout=0.1):
         super().__init__()
         self.norm1 = TimeConditionalLayerNorm(hidden_dim, time_embed_dim)
         
         self.attn = nn.MultiheadAttention(
             embed_dim=hidden_dim,
             num_heads=num_heads,
-            batch_first=True
+            batch_first=True,
+            dropout=dropout
         )
         
+        self.dropout1 = nn.Dropout(dropout)
+
         self.norm2 = TimeConditionalLayerNorm(hidden_dim, time_embed_dim)
         
         self.ffn = nn.Sequential(
@@ -19,7 +22,9 @@ class TransformerBlock(nn.Module):
             nn.GELU(),
             nn.Linear(4 * hidden_dim, hidden_dim, bias=False)
         )
-        nn.init.zeros_(self.ffn[-1].weight)
+
+        self.dropout2 = nn.Dropout(dropout)  # After FFN
+        nn.init.zeros_(self.ffn[-1].weight)  # Adjust index due to new dropout layer
         
     def forward(self, x, time_emb, padding_mask=None):
         # First norm and attention
@@ -39,6 +44,9 @@ class TransformerBlock(nn.Module):
             key_padding_mask=None,  # Change: remove key_padding_mask since we're using attn_mask
             attn_mask=attn_mask
         )
+
+        # Apply dropout after attention
+        attn_out = self.dropout1(attn_out)
         
         # Apply residual connection, masking padded positions
         if padding_mask is not None:
@@ -49,6 +57,9 @@ class TransformerBlock(nn.Module):
         normed = self.norm2(x, time_emb, padding_mask)
         ffn_out = self.ffn(normed)
         
+        # Apply dropout after FFN
+        ffn_out = self.dropout2(ffn_out)
+
         # Mask FFN output for padding positions
         if padding_mask is not None:
             ffn_out = ffn_out.masked_fill(padding_mask.unsqueeze(-1), 0.0)

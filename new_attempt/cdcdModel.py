@@ -18,10 +18,12 @@ class CDCDModel(nn.Module):
         time_embed_dim=128,
         t_min=1.0,
         t_max=300.0,
-        pad_token_id=0
+        pad_token_id=0,
+        dropout=0.1
     ):
         super().__init__()
         
+        self.dropout = nn.Dropout(dropout)
     
 
         # Core components we created
@@ -35,7 +37,7 @@ class CDCDModel(nn.Module):
         
         # Transformer blocks
         self.transformer_blocks = nn.ModuleList([
-            TransformerBlock(hidden_dim, num_heads, time_embed_dim)
+            TransformerBlock(hidden_dim, num_heads, time_embed_dim, dropout = dropout)
             for _ in range(num_layers)
         ])
         
@@ -61,8 +63,8 @@ class CDCDModel(nn.Module):
      
         
         # Embed tokens and add noise
-        embeddings = self.embedding(x)
-  
+        #embeddings = self.embedding(x)
+        embeddings = self.dropout(self.embedding(x))  #embedding dropout
         
         if padding_mask is not None:
             embeddings = embeddings.masked_fill(padding_mask.unsqueeze(-1), 0.0)
@@ -71,8 +73,8 @@ class CDCDModel(nn.Module):
         x, _ = self.noise.add_noise(embeddings, p_embeddings, timesteps)
    
         
-        x = self.input_proj(x)
-
+        #x = self.input_proj(x)
+        x = self.dropout(self.input_proj(x)) #hidden dim dropout
         
         c_noise = torch.log(timesteps) / 4
         time_emb = self.time_embedding(c_noise)
@@ -82,8 +84,9 @@ class CDCDModel(nn.Module):
         
         for i, block in enumerate(self.transformer_blocks):
             x = block(x, time_emb, padding_mask)
-       
+            x = self.dropout(x) #Transformer dropout
         
+        x = self.dropout(x) # Final projection dropout
         logits = self.output_proj(x)
        
         
