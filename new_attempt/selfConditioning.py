@@ -1,15 +1,16 @@
 import torch
+import torch.nn as nn
 
 class SelfConditioner(nn.Module):
     def __init__(self):
         super().__init__()
         self.prev_preds = None
     
-    def get_self_conditioning(self, x, model, embedding_layer, noise_layer, time_embedding_layer, training=True):
+    def get_self_conditioning(self, x, model, timesteps, training=True, padding_mask=None):
         """Get self-conditioning embeddings following Chen et al. 2022"""
         batch_size = x.size(0)
         device = x.device
-        embedding_dim = embedding_layer.embedding_dim
+        embedding_dim = model.embedding.embedding_dim
         
         if training:
             # During training: process half batch
@@ -18,43 +19,68 @@ class SelfConditioner(nn.Module):
             # Initialize output tensor
             p_embeddings = torch.zeros(batch_size, *x.shape[1:], embedding_dim, device=device)
             
+            # Split padding mask if it exists
+            half_padding_mask = None
+            if padding_mask is not None:
+                half_padding_mask = padding_mask[half_size:]
+            
             # For second half: get predictions without self-conditioning
             with torch.no_grad():
-                # Sample timesteps for second half
-                timesteps = noise_layer.sample_timesteps(half_size, device)
+                # Use the corresponding timesteps for the second half
+                half_timesteps = timesteps[half_size:]
                 
-                # Get embeddings and add noise
-                embeddings = embedding_layer(x[half_size:])
-                noisy_emb, _ = noise_layer.add_noise(
-                    embeddings,
-                    torch.zeros_like(embeddings), # No self-conditioning for first pass
-                    timesteps
+                # Get predictions using the original indices
+                pred_logits = model(
+                    x[half_size:],
+                    half_timesteps,
+                    training=False,
+                    padding_mask=half_padding_mask
                 )
                 
-                # Get predictions
-                pred_logits = model(noisy_emb, timesteps, training=False)
+                # Apply padding mask to logits before softmax if needed
+                if half_padding_mask is not None:
+                    pred_logits = pred_logits.masked_fill(
+                        half_padding_mask.unsqueeze(-1), 
+                        float('-inf')
+                    )
+                
                 probs = torch.softmax(pred_logits, dim=-1)
                 
                 # Interpolate embeddings
                 p_embeddings[half_size:] = torch.matmul(
                     probs, 
-                    embedding_layer.normalized_embeddings
+                    model.embedding.normalized_embeddings
                 )
+                
+                # Zero out padding positions in final embeddings
+                if half_padding_mask is not None:
+                    p_embeddings[half_size:] = p_embeddings[half_size:].masked_fill(
+                        half_padding_mask.unsqueeze(-1), 
+                        0.0
+                    )
             
             return p_embeddings
             
         else:
             # During sampling: use previous predictions if available
             if self.prev_preds is None:
-                return torch.zeros_like(x[:,:,None].expand(-1,-1,embedding_dim), device=device)
-            
-            return torch.matmul(
+                return torch.zeros((x.size(0), x.size(1), embedding_dim), device=device)
+                        
+            embeddings = torch.matmul(
                 self.prev_preds,
-                embedding_layer.normalized_embeddings
+                model.embedding.normalized_embeddings
             )
+            
+            # Apply padding mask if it exists
+            if padding_mask is not None:
+                embeddings = embeddings.masked_fill(padding_mask.unsqueeze(-1), 0.0)
+                
+            return embeddings
     
-    def update_prev_preds(self, logits):
+    def update_prev_preds(self, logits, padding_mask=None):
         """Store softmax probabilities for next sampling step"""
+        if padding_mask is not None:
+            logits = logits.masked_fill(padding_mask.unsqueeze(-1), float('-inf'))
         self.prev_preds = torch.softmax(logits, dim=-1)
         
     def reset(self):

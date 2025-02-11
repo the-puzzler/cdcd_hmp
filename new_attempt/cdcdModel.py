@@ -17,12 +17,15 @@ class CDCDModel(nn.Module):
         num_heads=8,
         time_embed_dim=128,
         t_min=1.0,
-        t_max=300.0
+        t_max=300.0,
+        pad_token_id=0
     ):
         super().__init__()
         
+    
+
         # Core components we created
-        self.embedding = CDCDEmbedding(vocab_size, embedding_dim)
+        self.embedding = CDCDEmbedding(vocab_size, embedding_dim, padding_idx=pad_token_id)
         self.noise = DiffusionNoise(t_min, t_max)
         self.self_conditioner = SelfConditioner()
         self.time_embedding = TimeEmbedding(time_embed_dim)
@@ -39,44 +42,50 @@ class CDCDModel(nn.Module):
         # Project back to vocabulary
         self.output_proj = nn.Linear(hidden_dim, vocab_size)
         
-    def forward(self, x, timesteps=None, training=True):
-        """
-        Args:
-            x: input tokens [batch_size, seq_len]
-            timesteps: noise timesteps [batch_size] or None (will be sampled if None)
-            training: whether in training mode
-        Returns:
-            logits: [batch_size, seq_len, vocab_size]
-        """
+
+    
+    def forward(self, x, timesteps=None, training=True, padding_mask=None):
+     
+        
         batch_size = x.shape[0]
         device = x.device
         
-        # Sample timesteps if not provided
         if timesteps is None:
             timesteps = self.noise.sample_timesteps((batch_size,), device)
-            
+    
+
         # Get self-conditioning embeddings
         p_embeddings = self.self_conditioner.get_self_conditioning(
-            x, self, self.embedding, self.noise, self.time_embedding, training
+            x, self, timesteps, training, padding_mask
         )
+     
         
         # Embed tokens and add noise
         embeddings = self.embedding(x)
+  
+        
+        if padding_mask is not None:
+            embeddings = embeddings.masked_fill(padding_mask.unsqueeze(-1), 0.0)
+            p_embeddings = p_embeddings.masked_fill(padding_mask.unsqueeze(-1), 0.0)
+        
         x, _ = self.noise.add_noise(embeddings, p_embeddings, timesteps)
+   
         
-        # Project to hidden dimension
         x = self.input_proj(x)
+
         
-        # Get time embeddings
         c_noise = torch.log(timesteps) / 4
         time_emb = self.time_embedding(c_noise)
+     
         
-        # Process through transformer blocks
-        for block in self.transformer_blocks:
-            x = block(x, time_emb)
-            
-        # Project to logits
+    
+        
+        for i, block in enumerate(self.transformer_blocks):
+            x = block(x, time_emb, padding_mask)
+       
+        
         logits = self.output_proj(x)
+       
         
         return logits
     
@@ -111,3 +120,5 @@ class CDCDModel(nn.Module):
             x = torch.argmax(probs, dim=-1)
             
         return x
+    
+  

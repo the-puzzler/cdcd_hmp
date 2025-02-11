@@ -10,19 +10,22 @@ class DiffusionNoise:
         """
         Add noise and apply preconditioning
         Args:
-            embeddings: normalized embeddings
-            self_cond: self-conditioning embeddings
-            t: timesteps (sigma in Karras notation)
+            embeddings: normalized embeddings [batch_size, seq_len, embed_dim]
+            self_cond: self-conditioning embeddings [batch_size, seq_len, embed_dim]
+            t: timesteps [batch_size]
         """
+        # Reshape t to [batch_size, 1, 1] for proper broadcasting
+        t = t.view(-1, 1, 1)
+        
         # Add noise to embeddings (but not self_cond)
-        noise = torch.randn_like(embeddings) * t.view(*t.shape, 1)
+        noise = torch.randn_like(embeddings) * t
         noisy_embeddings = embeddings + noise
         
         # Concatenate with self-conditioning
         x = torch.cat([noisy_embeddings, self_cond], dim=-1)
         
         # Apply input preconditioning (cin)
-        c_in = 1 / torch.sqrt(t**2 + 1).view(*t.shape, 1)
+        c_in = 1 / torch.sqrt(t**2 + 1)
         x = x * c_in
         
         return x, noise
