@@ -47,7 +47,9 @@ class CDCDModel(nn.Module):
 
     
     def forward(self, x, timesteps=None, training=True, padding_mask=None):
-     
+        """
+        Cannot be used for inference becuase will add noise baed on time step which is not wanted.
+        """
         
         batch_size = x.shape[0]
         device = x.device
@@ -106,7 +108,7 @@ class CDCDModel(nn.Module):
         timesteps = torch.linspace(self.noise.t_max, self.noise.t_min, num_steps, device=device)
         
         # Initialize self-conditioner with zeros
-        self.self_conditioner.prev_probs = None
+        self.self_conditioner.prev_preds = None
         
         for t in timesteps:
             # Expand t for batch
@@ -117,7 +119,7 @@ class CDCDModel(nn.Module):
             probs = torch.softmax(logits, dim=-1)
             
             # Update self-conditioner
-            self.self_conditioner.update_prev_probs(probs)
+            self.self_conditioner.update_prev_preds(probs)
             
             # Take argmax for next iteration
             x = torch.argmax(probs, dim=-1)
