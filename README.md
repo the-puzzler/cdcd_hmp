@@ -13,3 +13,10 @@ After this model is trained to some degree, a SAE can be used to learn informati
 ## Dataset
 The dataset comes from the human micro-biome project. This has samples of OTUs from different sites on healthy humans.
 
+## Different implementations
+
+Simplified V1 and V2 contain simplified implementations of the original paper, not only removing positional encoding, but adjusting scaling factors, fixed functions, self conditioning, time conditioned layer normalisation in the transformer etc.
+
+V2 is more like the paper than V1 in that it adds back in more stringent following of scaling and fixed transformation but leaves out the afdore mentioned other parts.
+
+more_complete is as it sounds. The only major difference is that it leaves out positional encoding (and of course does not do language modelling: autoregressive/masked prediction). I took much inspiration from Francesco215
