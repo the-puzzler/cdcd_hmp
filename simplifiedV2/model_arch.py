@@ -53,8 +53,8 @@ class simplifiedV2(nn.Module):
         
         # Embedding projection if needed
         self.embedding_projection = (
-            nn.Linear(embedding_dim, transformer_dim) 
-            if embedding_dim != transformer_dim 
+            nn.Linear(embedding_dim*2, transformer_dim) 
+            if embedding_dim*2 != transformer_dim 
             else nn.Identity()
         )
         
@@ -109,7 +109,7 @@ class simplifiedV2(nn.Module):
         noise = torch.randn_like(scaled_emb)
         noised_emb = torch.where(
             padding_mask.unsqueeze(-1),
-            scaled_emb + t * noise,
+            scaled_emb + t * noise, #square root here?
             scaled_emb
         )
         
@@ -120,17 +120,35 @@ class simplifiedV2(nn.Module):
             noised_emb / torch.sqrt(t_squared + 1),
             noised_emb
         )
+        normalized_noised_emb = noised_emb #skip noise
         
         # Process time for time embedding
         log_t = torch.log(t.squeeze(-1).squeeze(-1) + 1e-8) / 4
         time_emb = self.time_embedding(log_t)
-        
-        # Add time embedding (only to non-padding tokens)
-        embedded = torch.where(
+
+        #Trying this.
+        # L2 normalize and scale time embeddings to match token embeddings scale
+        time_norm = torch.norm(time_emb, p=2, dim=-1, keepdim=True)
+        time_emb = (time_emb / (time_norm + 1e-8)) * math.sqrt(self.embedding_dim)
+                
+        # # Add time embedding (only to non-padding tokens)
+        # embedded = torch.where(
+        #     padding_mask.unsqueeze(-1),
+        #     normalized_noised_emb + time_emb.unsqueeze(1),
+        #     normalized_noised_emb
+        # )
+
+        expanded_time_emb = time_emb.unsqueeze(1).expand(-1, normalized_noised_emb.size(1), -1)
+
+        # Only apply to non-padding tokens
+        expanded_time_emb = torch.where(
             padding_mask.unsqueeze(-1),
-            normalized_noised_emb + time_emb.unsqueeze(1),
-            normalized_noised_emb
+            expanded_time_emb,
+            torch.zeros_like(expanded_time_emb)
         )
+
+        # Concatenate along the embedding dimension (last dimension)
+        embedded = torch.cat([normalized_noised_emb, expanded_time_emb], dim=-1)
         
         # Project to transformer dimension if needed
         embedded = self.embedding_projection(embedded)

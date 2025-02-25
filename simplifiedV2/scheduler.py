@@ -70,7 +70,7 @@ class AdaptiveSchedule(nn.Module):
         offset_lower_bound = -cumulative_density_function(0, self.mu, self.sigma, self.height, 0)
         bounds = (
         (0.1, 0.1, 0.1, offset_lower_bound),  
-        (np.inf, np.inf, np.inf, np.inf)
+        (50000, 50000, 50000, np.inf)
         )
         
         optimal_parameters, _ = curve_fit(
