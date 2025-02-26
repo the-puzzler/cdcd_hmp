@@ -120,7 +120,7 @@ class simplifiedV2(nn.Module):
             noised_emb / torch.sqrt(t_squared + 1),
             noised_emb
         )
-        normalized_noised_emb = noised_emb #skip noise
+        #normalized_noised_emb = noised_emb #skipped norm
         
         # Process time for time embedding
         log_t = torch.log(t.squeeze(-1).squeeze(-1) + 1e-8) / 4
@@ -131,13 +131,6 @@ class simplifiedV2(nn.Module):
         time_norm = torch.norm(time_emb, p=2, dim=-1, keepdim=True)
         time_emb = (time_emb / (time_norm + 1e-8)) * math.sqrt(self.embedding_dim)
                 
-        # # Add time embedding (only to non-padding tokens)
-        # embedded = torch.where(
-        #     padding_mask.unsqueeze(-1),
-        #     normalized_noised_emb + time_emb.unsqueeze(1),
-        #     normalized_noised_emb
-        # )
-
         expanded_time_emb = time_emb.unsqueeze(1).expand(-1, normalized_noised_emb.size(1), -1)
 
         # Only apply to non-padding tokens
