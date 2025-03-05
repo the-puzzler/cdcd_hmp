@@ -93,7 +93,6 @@ class simplifiedV2(nn.Module):
         
         # Get initial token embeddings
         #token_emb = self.token_embedding(x)
-        
         noise = x_noise
         token_emb = x_clean
 
@@ -112,13 +111,14 @@ class simplifiedV2(nn.Module):
 
         # Add scaled noise based on time (only to non-padding tokens)
         t = t.view(-1, 1, 1)
-        #noise = torch.randn_like(scaled_emb)
+        
+        
         noised_emb = torch.where(
             padding_mask.unsqueeze(-1),
-            scaled_emb + torch.sqrt(t) * noise, #adding sqrt here to test
+            scaled_emb +  noise, #no longer scale noise here, it should already be scaled on input
             scaled_emb
         )
-        
+         
         # Divide by sqrt(t^2 + 1), which makes magnitude of noised root d
         t_squared = t ** 2
         normalized_noised_emb = torch.where(
