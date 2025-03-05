@@ -109,18 +109,18 @@ class simplifiedV2(nn.Module):
         noise = torch.randn_like(scaled_emb)
         noised_emb = torch.where(
             padding_mask.unsqueeze(-1),
-            scaled_emb + t * noise, #square root here?
+            scaled_emb + torch.sqrt(t) * noise, #adding sqrt here to test
             scaled_emb
         )
         
-        # Divide by sqrt(t^2 + 1)
+        # Divide by sqrt(t^2 + 1), which makes magnitude of noised root d
         t_squared = t ** 2
         normalized_noised_emb = torch.where(
             padding_mask.unsqueeze(-1),
             noised_emb / torch.sqrt(t_squared + 1),
             noised_emb
         )
-        #normalized_noised_emb = noised_emb #skipped norm
+        # normalized_noised_emb = noised_emb #skipped norm
         
         # Process time for time embedding
         log_t = torch.log(t.squeeze(-1).squeeze(-1) + 1e-8) / 4
