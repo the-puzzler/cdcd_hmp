@@ -77,7 +77,7 @@ class simplifiedV2(nn.Module):
         # Final projection layer
         self.final_projection = nn.Linear(transformer_dim, vocab_size)
         
-    def forward(self, x, t, padding_mask=None):  # padding_mask: 1 for real tokens, 0 for padding
+    def forward(self, x_noise, x_clean, t, padding_mask=None):  # padding_mask: 1 for real tokens, 0 for padding
         """
         Args:
             x: Input tokens (batchsize, seq_length)
@@ -85,17 +85,22 @@ class simplifiedV2(nn.Module):
             padding_mask: Binary mask (batchsize, seq_length) - 1 for real tokens, 0 for padding
         """
         if padding_mask is None:
-            padding_mask = torch.ones_like(x, dtype=torch.bool)
+            padding_mask = torch.ones((x_clean.size(0), x_clean.size(1)), dtype=torch.bool, device=x_clean.device)
         
         # Create attention mask for transformer (1 = masked/ignore, 0 = attend to)
         # confusing inversion... but docs say 1 means do IGNORE 0 means DONT ignore.
         attention_mask = ~padding_mask
         
         # Get initial token embeddings
-        token_emb = self.token_embedding(x)
+        #token_emb = self.token_embedding(x)
         
+        noise = x_noise
+        token_emb = x_clean
+
+
         # L2 normalize and scale by sqrt(dim)
         # Only normalize non-padding tokens
+        
         norm = torch.norm(token_emb, p=2, dim=-1, keepdim=True)
         normalized_emb = torch.where(
             padding_mask.unsqueeze(-1),  # expand mask to embedding dim
@@ -104,9 +109,10 @@ class simplifiedV2(nn.Module):
         )
         scaled_emb = normalized_emb * math.sqrt(self.embedding_dim)
         
+
         # Add scaled noise based on time (only to non-padding tokens)
         t = t.view(-1, 1, 1)
-        noise = torch.randn_like(scaled_emb)
+        #noise = torch.randn_like(scaled_emb)
         noised_emb = torch.where(
             padding_mask.unsqueeze(-1),
             scaled_emb + torch.sqrt(t) * noise, #adding sqrt here to test
@@ -130,7 +136,7 @@ class simplifiedV2(nn.Module):
         # L2 normalize and scale time embeddings to match token embeddings scale
         time_norm = torch.norm(time_emb, p=2, dim=-1, keepdim=True)
         time_emb = (time_emb / (time_norm + 1e-8)) * math.sqrt(self.embedding_dim)
-                
+         
         expanded_time_emb = time_emb.unsqueeze(1).expand(-1, normalized_noised_emb.size(1), -1)
 
         # Only apply to non-padding tokens
