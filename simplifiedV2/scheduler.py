@@ -90,78 +90,77 @@ class AdaptiveSchedule(nn.Module):
         return self.distribution.sample(shape)
 
 
-
-
-
-
-
-
-
-
-    # just some plotting functions
-    def plot_entropy_time_curve(self, filename='et.png',title='CrossEntropy-Sigma Curve'):
-        history_cutoff=int(1e5)
-        if len(self.times)>=history_cutoff:
-            self.times=self.times[-history_cutoff:]
-            self.entropy=self.entropy[-history_cutoff:]
-
+    def plot_entropy_time_curve(self, filename='et.png', title='CrossEntropy-Sigma Curve'):
+        history_cutoff = int(1e5)
+        if len(self.times) >= history_cutoff:
+            self.times = self.times[-history_cutoff:]
+            self.entropy = self.entropy[-history_cutoff:]
+        
         plt.close()
         plt.figure(figsize=(20, 4)) 
+        
         # Calculate logarithmic indices for coloring
         indices = np.arange(1, len(self.times) + 1)
         log_indices = np.log(indices)[::-1]  # Reverse to give more weight to recent points
         log_indices = (log_indices - np.min(log_indices)) / (np.max(log_indices) - np.min(log_indices))
-
+        
         # Scatter plot of entropy vs. time
         plt.scatter(self.times, self.entropy, c=log_indices, cmap='viridis', label='datapoints')
-
-
+        
         # Plot the best fit function
         t = np.logspace(np.log10(self.tmin), np.log10(self.tmax), 500, base=10.)
         s = cumulative_density_function(t, *self.optimal_parameters.detach().cpu().tolist())
-
         plt.plot(t, s, color='purple', label='Learnt unnormalized CFD')
+        
         plt.title(title)
         plt.xlabel('Sigma')
         plt.ylabel('CrossEntropy')
         plt.xscale('log')
-        plt.ylim(-0.2,7.2)
-        plt.xlim(0.7,200)
+        plt.ylim(-0.2, 7.2)
+        
+        # Set x-axis limits based on actual data range and tmin, tmax
+        data_min = max(0.7, min(self.times) * 0.9) if self.times else self.tmin
+        data_max = min(200, max(self.times) * 1.1) if self.times else self.tmax
+        x_min = max(data_min, self.tmin)
+        x_max = min(data_max, self.tmax)
+        plt.xlim(x_min, x_max)
+        
         plt.legend()
-
-        # Save the plot to a file
         plt.savefig(filename)
         plt.show()
 
-    def plot_training_curves(self,title='CrossEntropy-Sigma Curve',filename='curves.png'):
+    def plot_training_curves(self, title='CrossEntropy-Sigma Curve', filename='curves.png'):
         plt.close()
         plt.figure(figsize=(20, 4)) 
-
         
         # Calculate logarithmic indices for coloring
         indices = np.arange(1, len(self.parameters_history))
         log_indices = np.log(indices)[::-1]  # Reverse to give more weight to recent points
         log_indices = (log_indices - np.min(log_indices)) / (np.max(log_indices) - np.min(log_indices))
-
-        cmap=plt.get_cmap('viridis')
-        colors=cmap(log_indices)
+        cmap = plt.get_cmap('viridis')
+        colors = cmap(log_indices)
+        
         # Plot the best fit function
-        for p,c in zip(self.parameters_history[1:],colors):
-            t = np.logspace(np.log10(self.tmin), np.log10(self.tmax), 500, base=10.)
+        t = np.logspace(np.log10(self.tmin), np.log10(self.tmax), 500, base=10.)
+        
+        for p, c in zip(self.parameters_history[1:], colors):
             s = cumulative_density_function(t, *p)
             plt.plot(t, s, color=c)
-
+        
         plt.title(title)
         plt.xlabel('Sigma')
         plt.ylabel('CrossEntropy')
         plt.xscale('log')
-        plt.ylim(-0.2,7.2)
-        plt.xlim(0.7,200)
+        plt.ylim(-0.2, 7.2)
+        
+        # Set x-axis limits based on tmin and tmax to avoid unnecessary whitespace
+        plt.xlim(self.tmin, self.tmax)
+        
         plt.legend()
-
-        # Save the plot to a file
         plt.savefig(filename)
         plt.show()
+
+
 
 
 
